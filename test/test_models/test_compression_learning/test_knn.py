@@ -15,6 +15,7 @@ class TestCompressionKNNInitialization:
         assert clf.n_neighbors == 5
         assert clf.compression == 'gzip'
         assert clf.token_scrubbing is False
+        assert clf.encoding == 'utf-8'
         assert isinstance(clf.ncd, NormalizedCompressionDistance)
     
     def test_custom_n_neighbors(self) -> None:
@@ -42,12 +43,28 @@ class TestCompressionKNNInitialization:
         clf = CompressionKNN(token_scrubbing=False)
         assert clf.token_scrubbing is False
     
+    def test_custom_encoding_utf8(self) -> None:
+        """Test initialization with UTF-8 encoding."""
+        clf = CompressionKNN(encoding='utf-8')
+        assert clf.encoding == 'utf-8'
+    
+    def test_custom_encoding_latin1(self) -> None:
+        """Test initialization with Latin-1 encoding."""
+        clf = CompressionKNN(encoding='latin-1')
+        assert clf.encoding == 'latin-1'
+    
+    def test_custom_encoding_ascii(self) -> None:
+        """Test initialization with ASCII encoding."""
+        clf = CompressionKNN(encoding='ascii')
+        assert clf.encoding == 'ascii'
+    
     def test_all_custom_parameters(self) -> None:
         """Test initialization with all custom parameters."""
-        clf = CompressionKNN(n_neighbors=7, compression='gzip', token_scrubbing=True)
+        clf = CompressionKNN(n_neighbors=7, compression='gzip', token_scrubbing=True, encoding='latin-1')
         assert clf.n_neighbors == 7
         assert clf.compression == 'gzip'
         assert clf.token_scrubbing is True
+        assert clf.encoding == 'latin-1'
     
     def test_ncd_instance_created(self) -> None:
         """Test that NCD instance is created during initialization."""
@@ -118,6 +135,70 @@ class TestCompressionKNNGetCompressionFunction:
         assert "Compression method 'bz2' is not implemented" in str(exc_info.value)
 
 
+class TestCompressionKNNConvertToBytes:
+    """Test suite for CompressionKNN._convert_to_bytes method."""
+    
+    def test_convert_string_to_bytes_utf8(self) -> None:
+        """Test converting string to bytes with UTF-8 encoding."""
+        clf = CompressionKNN(encoding='utf-8')
+        result = clf._convert_to_bytes('hello')
+        assert result == b'hello'
+        assert isinstance(result, bytes)
+    
+    def test_convert_string_to_bytes_latin1(self) -> None:
+        """Test converting string to bytes with Latin-1 encoding."""
+        clf = CompressionKNN(encoding='latin-1')
+        result = clf._convert_to_bytes('café')
+        assert isinstance(result, bytes)
+        assert result == 'café'.encode('latin-1')
+    
+    def test_convert_string_to_bytes_ascii(self) -> None:
+        """Test converting string to bytes with ASCII encoding."""
+        clf = CompressionKNN(encoding='ascii')
+        result = clf._convert_to_bytes('hello')
+        assert result == b'hello'
+    
+    def test_convert_bytes_remains_bytes(self) -> None:
+        """Test that bytes input remains unchanged."""
+        clf = CompressionKNN()
+        input_bytes = b'hello world'
+        result = clf._convert_to_bytes(input_bytes)
+        assert result == input_bytes
+        assert result is input_bytes
+    
+    def test_convert_unicode_string(self) -> None:
+        """Test converting Unicode string to bytes."""
+        clf = CompressionKNN(encoding='utf-8')
+        result = clf._convert_to_bytes('héllo wörld 🌍')
+        assert isinstance(result, bytes)
+        assert result == 'héllo wörld 🌍'.encode('utf-8')
+    
+    def test_convert_empty_string(self) -> None:
+        """Test converting empty string to bytes."""
+        clf = CompressionKNN()
+        result = clf._convert_to_bytes('')
+        assert result == b''
+    
+    def test_convert_empty_bytes(self) -> None:
+        """Test that empty bytes remain unchanged."""
+        clf = CompressionKNN()
+        result = clf._convert_to_bytes(b'')
+        assert result == b''
+    
+    def test_convert_with_different_encodings(self) -> None:
+        """Test that encoding parameter affects conversion."""
+        text = 'café'
+        
+        clf_utf8 = CompressionKNN(encoding='utf-8')
+        result_utf8 = clf_utf8._convert_to_bytes(text)
+        
+        clf_latin1 = CompressionKNN(encoding='latin-1')
+        result_latin1 = clf_latin1._convert_to_bytes(text)
+        
+        # Different encodings produce different byte sequences
+        assert result_utf8 != result_latin1
+
+
 class TestCompressionKNNFit:
     """Test suite for CompressionKNN.fit method."""
     
@@ -136,7 +217,8 @@ class TestCompressionKNNFit:
         
         assert hasattr(clf, 'stored_X')
         assert hasattr(clf, 'stored_y')
-        assert clf.stored_X == X
+        # Data is converted to bytes, so check as bytes
+        assert all(isinstance(x, bytes) for x in clf.stored_X)
         assert clf.stored_y == y
     
     def test_fit_returns_self(self, simple_data: tuple) -> None:
@@ -210,8 +292,57 @@ class TestCompressionKNNFit:
         clf.fit(X1, y1)
         clf.fit(X2, y2)
         
-        assert clf.stored_X == X2
+        assert len(clf.stored_X) == 1
         assert clf.stored_y == y2
+    
+    def test_fit_with_string_inputs(self) -> None:
+        """Test fit automatically converts string inputs to bytes."""
+        X = ["hello world", "hello there", "goodbye world"]
+        y = [0, 0, 1]
+        
+        clf = CompressionKNN()
+        clf.fit(X, y)
+        
+        assert hasattr(clf, 'stored_X')
+        assert all(isinstance(x, bytes) for x in clf.stored_X)
+        assert clf.stored_X[0] == b"hello world"
+    
+    def test_fit_with_mixed_string_and_bytes(self) -> None:
+        """Test fit handles mixed string and bytes inputs."""
+        X = ["hello", b"world", "test"]
+        y = [0, 1, 0]
+        
+        clf = CompressionKNN()
+        clf.fit(X, y)
+        
+        assert all(isinstance(x, bytes) for x in clf.stored_X)
+        assert clf.stored_X[0] == b"hello"
+        assert clf.stored_X[1] == b"world"
+    
+    def test_fit_with_unicode_strings(self) -> None:
+        """Test fit handles Unicode strings correctly."""
+        X = ["café", "naïve", "résumé"]
+        y = [0, 1, 0]
+        
+        clf = CompressionKNN(encoding='utf-8')
+        clf.fit(X, y)
+        
+        assert all(isinstance(x, bytes) for x in clf.stored_X)
+        assert clf.stored_X[0] == "café".encode('utf-8')
+    
+    def test_fit_with_different_encoding(self) -> None:
+        """Test fit respects encoding parameter."""
+        X = ["café", "naïve"]
+        y = [0, 1]
+        
+        clf_utf8 = CompressionKNN(encoding='utf-8')
+        clf_utf8.fit(X, y)
+        
+        clf_latin1 = CompressionKNN(encoding='latin-1')
+        clf_latin1.fit(X, y)
+        
+        # Different encodings produce different byte sequences
+        assert clf_utf8.stored_X[0] != clf_latin1.stored_X[0]
 
 
 class TestCompressionKNNPredict:
@@ -312,6 +443,49 @@ class TestCompressionKNNPredict:
         predictions = trained_classifier.predict(X_test)
         
         assert predictions == []
+    
+    def test_predict_with_string_inputs(self) -> None:
+        """Test predict automatically converts string inputs to bytes."""
+        X_train = ["hello world", "hello there", "goodbye world", "goodbye there"]
+        y_train = [0, 0, 1, 1]
+        
+        clf = CompressionKNN(n_neighbors=2)
+        clf.fit(X_train, y_train)
+        
+        # Test with string inputs
+        X_test = ["hello", "goodbye"]
+        predictions = clf.predict(X_test)
+        
+        assert len(predictions) == 2
+        assert predictions[0] in [0, 1]
+        assert predictions[1] in [0, 1]
+    
+    def test_predict_with_mixed_string_and_bytes(self) -> None:
+        """Test predict handles mixed string and bytes inputs."""
+        X_train = ["hello", "goodbye"]
+        y_train = [0, 1]
+        
+        clf = CompressionKNN(n_neighbors=1)
+        clf.fit(X_train, y_train)
+        
+        # Mix of string and bytes
+        X_test = ["hello", b"goodbye"]
+        predictions = clf.predict(X_test)
+        
+        assert len(predictions) == 2
+    
+    def test_predict_with_unicode_strings(self) -> None:
+        """Test predict handles Unicode strings correctly."""
+        X_train = ["café", "naïve", "résumé"]
+        y_train = [0, 1, 0]
+        
+        clf = CompressionKNN(n_neighbors=1, encoding='utf-8')
+        clf.fit(X_train, y_train)
+        
+        X_test = ["café"]
+        predictions = clf.predict(X_test)
+        
+        assert predictions[0] == 0
 
 
 class TestCompressionKNNPredictProba:
@@ -421,6 +595,20 @@ class TestCompressionKNNPredictProba:
         probabilities = clf.predict_proba([b"cat1"])
         # All 3 nearest neighbors should be class 0
         assert probabilities[0] == 1.0 or probabilities[0] >= 0.66
+    
+    def test_predict_proba_with_string_inputs(self) -> None:
+        """Test predict_proba automatically converts string inputs to bytes."""
+        X_train = ["hello", "hello", "goodbye"]
+        y_train = [0, 0, 1]
+        
+        clf = CompressionKNN(n_neighbors=2)
+        clf.fit(X_train, y_train)
+        
+        X_test = ["hello"]
+        probabilities = clf.predict_proba(X_test)
+        
+        assert len(probabilities) == 1
+        assert 0 <= probabilities[0] <= 1
 
 
 class TestCompressionKNNEdgeCases:
@@ -656,3 +844,46 @@ class TestCompressionKNNIntegration:
         # Should predict majority class for similar sample
         predictions = clf.predict([b"majority"])
         assert predictions[0] == 0
+    
+    def test_multilingual_text_with_encoding(self) -> None:
+        """Test CompressionKNN with multilingual text using appropriate encoding."""
+        X_train = [
+            "café résumé",
+            "naïve jalapeño",
+            "hello world",
+            "goodbye earth"
+        ]
+        y_train = ['french', 'french', 'english', 'english']
+        
+        clf = CompressionKNN(n_neighbors=2, encoding='utf-8')
+        clf.fit(X_train, y_train)
+        
+        X_test = ["crème brûlée", "computer science"]
+        predictions = clf.predict(X_test)
+        
+        # Check predictions are valid
+        assert predictions[0] in ['french', 'english']
+        assert predictions[1] in ['french', 'english']
+    
+    def test_string_based_workflow(self) -> None:
+        """Test complete workflow using only strings (no bytes)."""
+        # This tests the convenience of automatic conversion
+        X_train = [
+            "apple fruit red",
+            "banana fruit yellow",
+            "carrot vegetable orange",
+            "broccoli vegetable green"
+        ]
+        y_train = ['fruit', 'fruit', 'vegetable', 'vegetable']
+        
+        clf = CompressionKNN(n_neighbors=2)
+        clf.fit(X_train, y_train)
+        
+        X_test = ["orange fruit", "spinach vegetable"]
+        predictions = clf.predict(X_test)
+        probabilities = clf.predict_proba(X_test)
+        
+        assert len(predictions) == 2
+        assert len(probabilities) == 2
+        assert all(p in ['fruit', 'vegetable'] for p in predictions)
+        assert all(0 <= prob <= 1 for prob in probabilities)
