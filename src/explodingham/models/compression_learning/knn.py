@@ -1,7 +1,7 @@
 from explodingham.utils.distance_metrics import NormalizedCompressionDistance
 from explodingham.utils.base.base_classifier import BaseExplodingHamClassifier
 import numpy as np
-from scipy.stats import mode
+from collections import Counter
 
 class CompressionKNN(BaseExplodingHamClassifier):
     def __init__(
@@ -105,8 +105,8 @@ class CompressionKNN(BaseExplodingHamClassifier):
             neighbor_indices = np.argsort(distances)[:self.n_neighbors]
             neighbor_labels = [self.stored_y[i] for i in neighbor_indices]
 
-            # Get label from mode of neighbor_labels
-            label = mode(neighbor_labels).mode[0]
+            # Get label from mode of neighbor_labels (supports any hashable type)
+            label = Counter(neighbor_labels).most_common(1)[0][0]
             if return_probs:
                 label = len([l for l in neighbor_labels if l == label]) / self.n_neighbors
 
