@@ -8,7 +8,8 @@ class CompressionKNN(BaseExplodingHamClassifier):
             self,
             n_neighbors: int = 5,
             compression: str = 'gzip',
-            token_scrubbing: bool = False
+            token_scrubbing: bool = False,
+            encoding: str = 'utf-8'
         ) -> None:
         """
         K-Nearest Neighbors classifier using compression-based distance metrics.
@@ -20,10 +21,13 @@ class CompressionKNN(BaseExplodingHamClassifier):
             Compression method to use (default is 'gzip').
         token_scrubbing : bool, optional
             Whether to use token scrubbing (default is False).
+        encoding : str, optional
+            Encoding to use when converting strings to bytes (default is 'utf-8').
         """
         self._set_param('n_neighbors', n_neighbors, int)
         self._set_option('compression', compression, ['gzip'])
         self._set_param('token_scrubbing', token_scrubbing, bool)
+        self._set_param('encoding', encoding, str)
         self.ncd = NormalizedCompressionDistance(
             compressor = self._get_compression_function()
         )
@@ -46,13 +50,29 @@ class CompressionKNN(BaseExplodingHamClassifier):
         
         raise NotImplementedError(f"Compression method '{self.compression}' is not implemented.")
 
+    def _convert_to_bytes(self, x: str | bytes) -> bytes:
+        """
+        Convert input to bytes if it's a string.
+        Parameters
+        ----------
+        x : str | bytes
+            Input data.
+        Returns
+        -------
+        bytes
+            Input data as bytes.
+        """
+        if isinstance(x, str):
+            return x.encode(self.encoding)
+        return x
+
     def fit(self, X, y):
         """
         Fit the CompressionKNN model.
         Parameters
         ----------
         X : array-like, shape (n_samples, n_features)
-            Training data.
+            Training data (strings or bytes).
         y : array-like, shape (n_samples,)
             Target labels.
         Returns
@@ -60,8 +80,8 @@ class CompressionKNN(BaseExplodingHamClassifier):
         self : object
             Fitted estimator.
         """
-        # Implementation of fit method goes here
-        self.stored_X = X
+        # Convert all training data to bytes
+        self.stored_X = [self._convert_to_bytes(x) for x in X]
         self.stored_y = y
 
         return self
@@ -97,8 +117,10 @@ class CompressionKNN(BaseExplodingHamClassifier):
     def _predict_labels_or_predict_proba(self, X, return_probs: bool) -> list:
         labels = []
         for x in X:
+            # Convert test sample to bytes
+            x_bytes = self._convert_to_bytes(x)
             distances = [
-                self.ncd.ncd(x, train_x) for train_x in self.stored_X
+                self.ncd.ncd(x_bytes, train_x) for train_x in self.stored_X
             ]
 
             # Get top n_neighbors from self.stored_y based on distances
