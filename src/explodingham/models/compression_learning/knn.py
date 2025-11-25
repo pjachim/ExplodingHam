@@ -78,7 +78,24 @@ class CompressionKNN(BaseExplodingHamClassifier):
         y_pred : array, shape (n_samples,)
             Predicted class labels.
         """
-        label = []
+        return self._predict_labels_or_predict_proba(X, return_probs=False)
+    
+    def predict_proba(self, X) -> list:
+        """
+        Predict class probabilities for the provided data.
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_features)
+            Input data.
+        Returns
+        -------
+        y_proba : array, shape (n_samples,)
+            Predicted class probabilities.
+        """
+        return self._predict_labels_or_predict_proba(X, return_probs=True)
+
+    def _predict_labels_or_predict_proba(self, X, return_probs: bool) -> list:
+        labels = []
         for x in X:
             distances = [
                 self.ncd.ncd(x, train_x) for train_x in self.stored_X
@@ -89,7 +106,10 @@ class CompressionKNN(BaseExplodingHamClassifier):
             neighbor_labels = [self.stored_y[i] for i in neighbor_indices]
 
             # Get label from mode of neighbor_labels
-            most_common = mode(neighbor_labels).mode[0]
-            label.append(most_common)
+            label = mode(neighbor_labels).mode[0]
+            if return_probs:
+                label = len([l for l in neighbor_labels if l == label]) / self.n_neighbors
 
-        return label
+            labels.append(label)
+
+        return labels
