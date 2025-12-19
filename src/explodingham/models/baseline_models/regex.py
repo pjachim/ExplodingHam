@@ -40,6 +40,18 @@ class BaseRegexClassifier(BaseExplodingHamClassifier):
         
         self.compiled_pattern = re.compile(self.pattern, combined_flags)
 
+    def fit(self, X: list[str] | None = None, y: list | None = None) -> None:
+        """
+        Fit method for compatibility. No training is required for regex classifiers.
+        Parameters
+        ----------
+        X : list[str] | None, optional
+            Input data (not used).
+        y : list | None, optional
+            Target labels (not used).
+        """
+        pass
+
 class RegexFullMatchClassifier(BaseRegexClassifier):
     """
     Classifier that detects partial matches of a regex pattern anywhere in the input string.
