@@ -1,5 +1,7 @@
 from explodingham.utils.base.base_classifier import BaseExplodingHamClassifier
 import re
+import narwhals as nw
+from typing import Any
 
 class BaseRegexClassifier(BaseExplodingHamClassifier):
     def __init__(
@@ -7,7 +9,8 @@ class BaseRegexClassifier(BaseExplodingHamClassifier):
             pattern: str = '',
             flags: list[re.RegexFlag] | None = None,
             ignore_case: bool = False,
-            encoding: str = 'utf-8'
+            encoding: str = 'utf-8',
+            column_name: str | None = None
         ) -> None:
         """
         Regex-based classifier that uses a regular expression pattern to classify input data.
@@ -32,6 +35,7 @@ class BaseRegexClassifier(BaseExplodingHamClassifier):
         # Store flags as list for introspection
         self._set_param('flags', list(flags_set), list)
         self._set_param('encoding', encoding, str)
+        self._set_param('column_name', column_name, (str, type(None)))
         
         # Combine flags for re.compile (bitwise OR)
         combined_flags = 0
@@ -40,7 +44,7 @@ class BaseRegexClassifier(BaseExplodingHamClassifier):
         
         self.compiled_pattern = re.compile(self.pattern, combined_flags)
 
-    def fit(self, X: list[str] | None = None, y: list | None = None) -> None:
+    def fit(self, X: Any = None, y: Any = None) -> None:
         """
         Fit method for compatibility. No training is required for regex classifiers.
         Parameters
@@ -118,93 +122,33 @@ class RegexFullMatchClassifier(BaseRegexClassifier):
         predictions : list[bool]
             List of boolean values indicating whether each input matches the pattern.
         """
+        X, column_name = self._process_dataframe(X)
+
+        X.with_columns(
+            nw.col(column_name).str.replace()
+        )
+
         predictions = []
         for x in X:
             if isinstance(x, bytes):
                 x = x.decode(self.encoding)
             match = self.compiled_pattern.search(x)
             predictions.append(match is not None)
+        
         return predictions
     
-class RegexPartialMatchClassifier(BaseRegexClassifier):
-    """
-    Classifier that matches a regex pattern only at the beginning of the input string.
-    
-    This classifier uses `re.match()` to check if the pattern matches at the start
-    of the input text. It returns True only if the string begins with the pattern,
-    False otherwise. This is useful for prefix matching, format validation, or
-    enforcing that strings start with specific patterns (e.g., protocol identifiers,
-    file extensions, or structured formats).
-    
-    Parameters
-    ----------
-    pattern : str, optional
-        Regular expression pattern to match at the start of strings (default is an empty string).
-    flags : list[re.RegexFlag] | None, optional
-        List of regex flags to modify pattern behavior (e.g., re.IGNORECASE, re.MULTILINE).
-        Default is None.
-    ignore_case : bool, optional
-        If True, adds re.IGNORECASE flag to make pattern matching case-insensitive.
-        Default is False.
-    encoding : str, optional
-        Character encoding to use when decoding byte strings (default is 'utf-8').
-    
-    Attributes
-    ----------
-    compiled_pattern : re.Pattern
-        Compiled regular expression pattern ready for matching operations.
-    
-    Examples
-    --------
-    >>> # Validate URLs starting with http/https
-    >>> clf = RegexPartialMatchClassifier(pattern=r'https?://')
-    >>> urls = [
-    ...     "https://example.com",
-    ...     "ftp://files.com",
-    ...     "http://site.org"
-    ... ]
-    >>> clf.predict(urls)
-    [True, False, True]
-    
-    >>> # Check if strings start with digits
-    >>> clf = RegexPartialMatchClassifier(pattern=r'\d+')
-    >>> clf.predict(["123abc", "abc123", "456"])
-    [True, False, True]
-    
-    >>> # Format validation: phone numbers starting with country code
-    >>> clf = RegexPartialMatchClassifier(pattern=r'\+1-\d{3}-\d{3}-\d{4}')
-    >>> clf.predict(["+1-555-123-4567", "555-123-4567", "+1-555-1234"])
-    [True, False, False]
-    
-    Notes
-    -----
-    This classifier uses `re.match()` internally, which only checks for a match
-    at the beginning of the string. To find patterns anywhere in the string,
-    use `RegexFullMatchClassifier` with `re.search()` instead.
-    
-    If you want to ensure the entire string matches the pattern (not just the prefix),
-    anchor your pattern with `^` at the start and `$` at the end.
-    
-    See Also
-    --------
-    RegexFullMatchClassifier : Matches pattern anywhere in the string
-    """
-    def predict(self, X: list[str]) -> list[bool]:
-        """
-        Predict whether each input string matches the regex pattern.
-        Parameters
-        ----------
-        X : list[str]
-            List of input strings to classify.
-        Returns
-        -------
-        predictions : list[bool]
-            List of boolean values indicating whether each input matches the pattern.
-        """
-        predictions = []
-        for x in X:
-            if isinstance(x, bytes):
-                x = x.decode(self.encoding)
-            match = self.compiled_pattern.match(x)
-            predictions.append(match is not None)
-        return predictions
+    def _process_dataframe(self, X: Any) -> tuple[nw.DataFrame, str]:
+        X: nw.DataFrame = nw.from_native(X)
+
+        if type(X) is not nw.DataFrame:
+            column_name = X.name
+            X = X.to_frame()
+        else:
+            if self.column_name is not None:
+                column_name = self.column_name
+            else:
+                if len(X.columns) > 1:
+                    raise ValueError("If column name is not specified, input data must have exactly one column.")
+                column_name = X.columns[0]
+
+        return X, column_name
