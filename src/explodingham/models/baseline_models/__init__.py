@@ -1,3 +1,3 @@
-from .regex import RegexPartialMatchClassifier, RegexFullMatchClassifier
+from .regex import BinaryRegexClassifier
 
-__all__ = ['RegexPartialMatchClassifier', 'RegexFullMatchClassifier']
+__all__ = ['BinaryRegexClassifier']

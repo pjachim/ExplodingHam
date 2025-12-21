@@ -3,60 +3,7 @@ import re
 import narwhals as nw
 from typing import Any
 
-class BaseRegexClassifier(BaseExplodingHamClassifier):
-    def __init__(
-            self,
-            pattern: str = '',
-            flags: list[re.RegexFlag] | None = None,
-            ignore_case: bool = False,
-            encoding: str = 'utf-8',
-            column_name: str | None = None
-        ) -> None:
-        """
-        Regex-based classifier that uses a regular expression pattern to classify input data.
-        Parameters
-        ----------
-        pattern : str, optional
-            Regular expression pattern to use for classification (default is an empty string).
-        flags : list[re.RegexFlag] | None, optional
-            Flags to pass to the regex compiler (default is None).
-        encoding : str, optional
-            Encoding to use when converting strings to bytes (default is 'utf-8').
-        """
-        self._set_param('pattern', pattern, str)
-
-        # Dedupe flags
-        flags_set = set(flags) if flags is not None else set()
-
-        # Add ignore case flag if specified, and not already present
-        if ignore_case:
-            flags_set.add(re.IGNORECASE)
-
-        # Store flags as list for introspection
-        self._set_param('flags', list(flags_set), list)
-        self._set_param('encoding', encoding, str)
-        self._set_param('column_name', column_name, (str, type(None)))
-        
-        # Combine flags for re.compile (bitwise OR)
-        combined_flags = 0
-        for flag in flags_set:
-            combined_flags |= flag
-        
-        self.compiled_pattern = re.compile(self.pattern, combined_flags)
-
-    def fit(self, X: Any = None, y: Any = None) -> None:
-        """
-        Fit method for compatibility. No training is required for regex classifiers.
-        Parameters
-        ----------
-        X : list[str] | None, optional
-            Input data (not used).
-        y : list | None, optional
-            Target labels (not used).
-        """
-        pass
-
-class RegexFullMatchClassifier(BaseRegexClassifier):
+class BinaryRegexClassifier(BaseExplodingHamClassifier):
     """
     Classifier that detects partial matches of a regex pattern anywhere in the input string.
     
@@ -110,6 +57,66 @@ class RegexFullMatchClassifier(BaseRegexClassifier):
     --------
     RegexPartialMatchClassifier : Matches pattern only at the start of the string
     """
+    def __init__(
+            self,
+            pattern: str = '',
+            flags: list[re.RegexFlag] | None = None,
+            ignore_case: bool = False,
+            encoding: str = 'utf-8',
+            column_name: str | None = None,
+            match_prediction: Any = 1,
+            no_match_prediction: Any = 0,
+            match_type: str = 'full',
+            prediction_name: str = 'prediction'
+        ) -> None:
+        """
+        Regex-based classifier that uses a regular expression pattern to classify input data.
+        Parameters
+        ----------
+        pattern : str, optional
+            Regular expression pattern to use for classification (default is an empty string).
+        flags : list[re.RegexFlag] | None, optional
+            Flags to pass to the regex compiler (default is None).
+        encoding : str, optional
+            Encoding to use when converting strings to bytes (default is 'utf-8').
+        """
+        self._set_param('pattern', pattern, str)
+
+        # Dedupe flags
+        flags_set = set(flags) if flags is not None else set()
+
+        # Add ignore case flag if specified, and not already present
+        if ignore_case:
+            flags_set.add(re.IGNORECASE)
+
+        # Store flags as list for introspection
+        self._set_param('flags', list(flags_set), list)
+        self._set_param('encoding', encoding, str)
+        self.column_name = column_name
+        self._set_param('match_prediction', match_prediction, lambda x: x)
+        self._set_param('no_match_prediction', no_match_prediction, lambda x: x)
+        self._set_param('match_type', match_type, str)
+        self._set_param('prediction_name', prediction_name, str)
+        
+        # Combine flags for re.compile (bitwise OR)
+        combined_flags = 0
+        for flag in flags_set:
+            combined_flags |= flag
+        
+        self.compiled_pattern = re.compile(self.pattern, combined_flags)
+
+    def fit(self, X: Any = None, y: Any = None) -> None:
+        """
+        Fit method for compatibility. No training is required for regex classifiers.
+        Parameters
+        ----------
+        X : list[str] | None, optional
+            Input data (not used).
+        y : list | None, optional
+            Target labels (not used).
+        """
+        pass
+
     def predict(self, X: list[str]) -> list[bool]:
         """
         Predict whether each input string matches the regex pattern.
@@ -124,23 +131,28 @@ class RegexFullMatchClassifier(BaseRegexClassifier):
         """
         X, column_name = self._process_dataframe(X)
 
-        X.with_columns(
-            nw.col(column_name).str.replace()
+        if self.match_type == 'partial':
+            condition = nw.col(column_name).str.contains(self.pattern)
+        elif self.match_type == 'full':
+            condition = nw.col(column_name).str.replace(self.pattern, '').len_chars() == nw.lit(0)
+        else:
+            raise ValueError(f"Invalid match_type: {self.match_type}. Valid options are: ['partial', 'full']")  
+
+        X = X.with_columns(
+            nw.when(condition).then(nw.lit(True)).otherwise(nw.lit(False)).alias(self.prediction_name)
         )
 
-        predictions = []
-        for x in X:
-            if isinstance(x, bytes):
-                x = x.decode(self.encoding)
-            match = self.compiled_pattern.search(x)
-            predictions.append(match is not None)
-        
+        predictions = X.select(self.prediction_name).to_native()
+
         return predictions
     
-    def _process_dataframe(self, X: Any) -> tuple[nw.DataFrame, str]:
-        X: nw.DataFrame = nw.from_native(X)
+    def _process_dataframe(self, X: Any) -> tuple[nw.DataFrame | nw.Series, str]:
+        X: nw.DataFrame = nw.from_native(X, allow_series=True)
 
-        if type(X) is not nw.DataFrame:
+        if type(X) is nw.Series:
+            if X.name is None:
+                X = X.alias('input_column')
+
             column_name = X.name
             X = X.to_frame()
         else:
