@@ -123,17 +123,6 @@ class BinaryRegexClassifier(BaseExplodingHamClassifier):
         self._set_param('no_match_prediction', no_match_prediction, lambda x: x)
         self._set_param('match_type', match_type, str)
         self._set_param('prediction_name', prediction_name, str)
-        
-        # Combine flags for re.compile (bitwise OR)
-        combined_flags = 0
-        for flag in flags_set:
-            combined_flags |= flag
-
-
-
-
-        
-        self.compiled_pattern = re.compile(self.pattern, combined_flags)
 
     def fit(self, X: Any = None, y: Any = None) -> None:
         """
@@ -176,7 +165,7 @@ class BinaryRegexClassifier(BaseExplodingHamClassifier):
 
         return predictions
     
-    def _process_dataframe(self, X: Any) -> tuple[nw.DataFrame | nw.Series, str]:
+    def _process_dataframe(self, X: nw.DataFrame | nw.Series) -> tuple[nw.DataFrame, str]:
         X: nw.DataFrame = nw.from_native(X, allow_series=True)
 
         if type(X) is nw.Series:
