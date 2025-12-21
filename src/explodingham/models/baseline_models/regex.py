@@ -18,57 +18,89 @@ REGEX_MAPPING = {
 
 class BinaryRegexClassifier(BaseExplodingHamClassifier):
     """
-    Classifier that detects partial matches of a regex pattern anywhere in the input string.
+    Dataframe-aware regex classifier that matches patterns using configurable match types.
     
-    This classifier uses `re.search()` to find the pattern anywhere within the input text.
-    It returns True if the pattern appears at any position in the string, False otherwise.
-    This is useful for keyword detection, substring matching, or identifying documents
-    that contain specific patterns regardless of their position.
+    This classifier uses the narwhals library to provide dataframe-agnostic pattern matching
+    across multiple backends (pandas, polars, etc.). It supports both partial matching
+    (pattern found anywhere in string) and full matching (entire string matches pattern).
+    The classifier returns a dataframe column with configurable prediction values for
+    matches and non-matches.
     
     Parameters
     ----------
     pattern : str, optional
-        Regular expression pattern to search for (default is an empty string).
+        Regular expression pattern to match against (default is an empty string).
     flags : list[re.RegexFlag] | None, optional
         List of regex flags to modify pattern behavior (e.g., re.IGNORECASE, re.MULTILINE).
+        These are converted to inline flags compatible with Rust regex syntax.
         Default is None.
     ignore_case : bool, optional
         If True, adds re.IGNORECASE flag to make pattern matching case-insensitive.
+        This is a convenience parameter equivalent to including re.IGNORECASE in flags.
         Default is False.
     encoding : str, optional
-        Character encoding to use when decoding byte strings (default is 'utf-8').
+        Character encoding for string operations (default is 'utf-8').
+        Currently not actively used but reserved for future byte string handling.
+    column_name : str | None, optional
+        Name of the column to apply pattern matching to. If None, the input must be
+        a Series or single-column DataFrame. Default is None.
+    match_prediction : Any, optional
+        Value to assign when pattern matches (default is 1).
+    no_match_prediction : Any, optional
+        Value to assign when pattern does not match (default is 0).
+    match_type : str, optional
+        Type of matching to perform. Valid options:
+        - 'partial': Pattern can match anywhere in the string (uses str.contains)
+        - 'full': Entire string must match the pattern (uses str.replace to check)
+        Default is 'full'.
+    prediction_name : str, optional
+        Name of the output prediction column (default is 'prediction').
     
     Attributes
     ----------
-    compiled_pattern : re.Pattern
-        Compiled regular expression pattern ready for matching operations.
+    pattern : str
+        The compiled pattern with inline flags (if any).
+    flags : list[re.RegexFlag]
+        List of regex flags being used.
     
     Examples
     --------
-    >>> # Detect emails anywhere in text
-    >>> clf = RegexFullMatchClassifier(pattern=r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b')
-    >>> texts = [
-    ...     "Contact us at support@example.com for help",
-    ...     "No contact information here",
-    ...     "My email is user@domain.org"
-    ... ]
-    >>> clf.predict(texts)
-    [True, False, True]
+    >>> import pandas as pd
+    >>> # Full match - entire string must match pattern
+    >>> clf = BinaryRegexClassifier(pattern=r'\d{3}-\d{4}', match_type='full')
+    >>> df = pd.DataFrame({'text': ['123-4567', 'call 123-4567', '999-0000']})
+    >>> clf.predict(df)['prediction'].tolist()
+    [1, 0, 1]
     
-    >>> # Case-insensitive keyword detection
-    >>> clf = RegexFullMatchClassifier(pattern=r'python', ignore_case=True)
-    >>> clf.predict(["I love Python", "Java is nice", "PYTHON rocks"])
-    [True, False, True]
+    >>> # Partial match - pattern found anywhere
+    >>> clf = BinaryRegexClassifier(pattern=r'python', match_type='partial', ignore_case=True)
+    >>> df = pd.DataFrame({'text': ['I love Python', 'Java is nice', 'PYTHON rocks']})
+    >>> clf.predict(df)['prediction'].tolist()
+    [1, 0, 1]
+    
+    >>> # Custom prediction values
+    >>> clf = BinaryRegexClassifier(
+    ...     pattern=r'error',
+    ...     match_prediction='ERROR',
+    ...     no_match_prediction='OK',
+    ...     match_type='partial'
+    ... )
+    >>> df = pd.DataFrame({'logs': ['error in line 10', 'success', 'fatal error']})
+    >>> clf.predict(df)['prediction'].tolist()
+    ['ERROR', 'OK', 'ERROR']
     
     Notes
     -----
-    This classifier uses `re.search()` internally, which scans through the string
-    looking for the first location where the pattern matches. For full string matching
-    (anchored at start), use `RegexPartialMatchClassifier` instead.
+    This classifier uses narwhals for dataframe interoperability, allowing it to work
+    seamlessly with pandas, polars, and other dataframe libraries. The regex pattern
+    is executed using the underlying dataframe library's string operations.
     
-    See Also
-    --------
-    RegexPartialMatchClassifier : Matches pattern only at the start of the string
+    The 'full' match_type works by replacing all matches with empty string and checking
+    if the result has length 0. This is equivalent to checking if the entire string
+    matches the pattern.
+    
+    Python regex flags are automatically converted to inline Rust regex syntax using
+    the REGEX_MAPPING dictionary, ensuring compatibility across different regex engines.
     """
     def __init__(
             self,
@@ -83,15 +115,33 @@ class BinaryRegexClassifier(BaseExplodingHamClassifier):
             prediction_name: str = 'prediction'
         ) -> None:
         """
-        Regex-based classifier that uses a regular expression pattern to classify input data.
+        Initialize the BinaryRegexClassifier with pattern and configuration.
+        
         Parameters
         ----------
         pattern : str, optional
-            Regular expression pattern to use for classification (default is an empty string).
+            Regular expression pattern to match against (default is an empty string).
         flags : list[re.RegexFlag] | None, optional
-            Flags to pass to the regex compiler (default is None).
+            List of regex flags to modify pattern behavior. Converted to inline flags.
+            Supported flags: IGNORECASE, MULTILINE, DOTALL, VERBOSE, UNICODE.
+            Default is None.
+        ignore_case : bool, optional
+            If True, adds re.IGNORECASE flag for case-insensitive matching.
+            Default is False.
         encoding : str, optional
-            Encoding to use when converting strings to bytes (default is 'utf-8').
+            Character encoding for string operations (default is 'utf-8').
+        column_name : str | None, optional
+            Name of column to match against. If None, input must be a Series or
+            single-column DataFrame. Default is None.
+        match_prediction : Any, optional
+            Value returned when pattern matches (default is 1).
+        no_match_prediction : Any, optional
+            Value returned when pattern does not match (default is 0).
+        match_type : str, optional
+            Type of matching: 'partial' (anywhere in string) or 'full' (entire string).
+            Default is 'full'.
+        prediction_name : str, optional
+            Name of the output prediction column (default is 'prediction').
         """
         # Process flags
         if (flags is not None) or ignore_case:
@@ -126,27 +176,33 @@ class BinaryRegexClassifier(BaseExplodingHamClassifier):
 
     def fit(self, X: Any = None, y: Any = None) -> None:
         """
-        Fit method for compatibility. No training is required for regex classifiers.
+        Fit method for sklearn API compatibility. No training required for regex classifiers.
+        
         Parameters
         ----------
-        X : list[str] | None, optional
-            Input data (not used).
-        y : list | None, optional
-            Target labels (not used).
+        X : Any, optional
+            Input data (not used). Default is None.
+        y : Any, optional
+            Target labels (not used). Default is None.
         """
         pass
 
-    def predict(self, X: list[str]) -> list[bool]:
+    def predict(self, X: nw.DataFrame | nw.Series | Any) -> Any:
         """
-        Predict whether each input string matches the regex pattern.
+        Apply regex pattern matching and return predictions as a dataframe.
+        
         Parameters
         ----------
-        X : list[str]
-            List of input strings to classify.
+        X : DataFrame, Series, or compatible data structure
+            Input data to classify. Can be a pandas/polars DataFrame, Series, or any
+            structure supported by narwhals. If DataFrame with multiple columns,
+            column_name must be specified in the constructor.
+        
         Returns
         -------
-        predictions : list[bool]
-            List of boolean values indicating whether each input matches the pattern.
+        predictions : DataFrame
+            Native dataframe (in the same format as input) containing the prediction
+            column with match/no-match values.
         """
         X, column_name = self._process_dataframe(X)
 
@@ -166,6 +222,40 @@ class BinaryRegexClassifier(BaseExplodingHamClassifier):
         return predictions
     
     def _process_dataframe(self, X: nw.DataFrame | nw.Series) -> tuple[nw.DataFrame, str]:
+        """
+        Convert input to narwhals DataFrame and determine target column name.
+        
+        This helper method normalizes various input formats (DataFrame, Series, or
+        native pandas/polars objects) into a narwhals DataFrame and identifies which
+        column to apply pattern matching to.
+        
+        Parameters
+        ----------
+        X : DataFrame, Series, or compatible data structure
+            Input data to process. Can be a narwhals DataFrame/Series or native
+            pandas/polars objects that narwhals can convert.
+        
+        Returns
+        -------
+        df : nw.DataFrame
+            Narwhals DataFrame ready for pattern matching operations.
+        column_name : str
+            Name of the column to apply regex matching to.
+        
+        Raises
+        ------
+        ValueError
+            If input is a multi-column DataFrame and column_name was not specified
+            in the constructor.
+        
+        Notes
+        -----
+        For Series input, the Series name is used as the column name. If the Series
+        has no name, it is assigned 'input_column' as a default name.
+        
+        For DataFrame input, uses self.column_name if specified, otherwise requires
+        exactly one column in the DataFrame.
+        """
         X: nw.DataFrame = nw.from_native(X, allow_series=True)
 
         if type(X) is nw.Series:
