@@ -3,6 +3,19 @@ import re
 import narwhals as nw
 from typing import Any
 
+# Maps python REGEX flags to their string representations in Rust ReGex single letter flags.
+# Used for constructing regex patterns with inline flags.
+# References:
+# - Rust docs: https://docs.rs/regex/latest/regex/#grouping-and-flags
+# - Python docs: https://docs.python.org/3/library/re.html#re.RegexFlag
+REGEX_MAPPING = {
+    re.IGNORECASE: 'i',
+    re.MULTILINE: 'm',
+    re.DOTALL: 's',
+    re.VERBOSE: 'x',
+    re.UNICODE: 'u'
+}
+
 class BinaryRegexClassifier(BaseExplodingHamClassifier):
     """
     Classifier that detects partial matches of a regex pattern anywhere in the input string.
@@ -80,17 +93,30 @@ class BinaryRegexClassifier(BaseExplodingHamClassifier):
         encoding : str, optional
             Encoding to use when converting strings to bytes (default is 'utf-8').
         """
-        self._set_param('pattern', pattern, str)
+        # Process flags
+        if (flags is not None) or ignore_case:
+            # Dedupe flags
+            flags_set = set(flags) if flags is not None else set()
 
-        # Dedupe flags
-        flags_set = set(flags) if flags is not None else set()
+            if ignore_case:
+                flags_set.add(re.IGNORECASE)
 
-        # Add ignore case flag if specified, and not already present
-        if ignore_case:
-            flags_set.add(re.IGNORECASE)
+            # Construct inline flag string
+            flags_str = ''
+            for flag in flags_set:
+                flags_str += REGEX_MAPPING[flag]
+            
+            # Update pattern to include inline flags
+            self._set_param('pattern', f'(?{flags_str})' + str(pattern), str)
 
-        # Store flags as list for introspection
-        self._set_param('flags', list(flags_set), list)
+            # Store flags as list for introspection
+            self._set_param('flags', list(flags_set), list)
+
+        else:
+            flags_set = set()
+            self._set_param('pattern', pattern, str)
+            self._set_param('flags', [], list)
+        
         self._set_param('encoding', encoding, str)
         self.column_name = column_name
         self._set_param('match_prediction', match_prediction, lambda x: x)
@@ -102,6 +128,10 @@ class BinaryRegexClassifier(BaseExplodingHamClassifier):
         combined_flags = 0
         for flag in flags_set:
             combined_flags |= flag
+
+
+
+
         
         self.compiled_pattern = re.compile(self.pattern, combined_flags)
 
@@ -134,12 +164,12 @@ class BinaryRegexClassifier(BaseExplodingHamClassifier):
         if self.match_type == 'partial':
             condition = nw.col(column_name).str.contains(self.pattern)
         elif self.match_type == 'full':
-            condition = nw.col(column_name).str.replace(self.pattern, '').len_chars() == nw.lit(0)
+            condition = nw.col(column_name).str.replace(self.pattern, '').str.len_chars() == nw.lit(0)
         else:
             raise ValueError(f"Invalid match_type: {self.match_type}. Valid options are: ['partial', 'full']")  
 
         X = X.with_columns(
-            nw.when(condition).then(nw.lit(True)).otherwise(nw.lit(False)).alias(self.prediction_name)
+            nw.when(condition).then(nw.lit(self.match_prediction)).otherwise(nw.lit(self.no_match_prediction)).alias(self.prediction_name)
         )
 
         predictions = X.select(self.prediction_name).to_native()
