@@ -2,6 +2,7 @@ from typing import Callable
 from explodingham.utils.base.base_classifier import BaseExplodingHamClassifier
 import narwhals as nw
 import numpy as np
+from narwhals.typing import DataFrameOrSeries
 
 class BaseKNNModel(BaseExplodingHamClassifier):
     """Base class for K-Nearest Neighbors models using custom distance metrics.
@@ -185,7 +186,7 @@ class CompressionKNN(BaseKNNModel):
     The Normalized Compression Distance (NCD) quantifies this:
     
     .. math::
-        NCD(x, y) = \\frac{C(xy) - \\min\\{C(x), C(y)\\}}{\\max\\{C(x), C(y)\\}}
+        NCD(x, y) = [C(xy) - min{C(x), C(y)}] / max{C(x), C(y)}
     
     where C(·) is the compressed length and xy denotes concatenation. NCD ranges
     from 0 (identical) to 1+ (dissimilar).
@@ -275,35 +276,47 @@ class CompressionKNN(BaseKNNModel):
     
     Notes
     -----
-    The Normalized Compression Distance approximates the normalized information
-    distance (NID), which is based on Kolmogorov complexity K(·):
-    
-    .. math::
-        NID(x, y) = \\frac{\\max\\{K(x|y), K(y|x)\\}}{\\max\\{K(x), K(y)\\}}
-    
-    Since Kolmogorov complexity is uncomputable, we approximate K(x) with C(x),
-    the compressed length using a real-world compressor. This makes NCD computable
-    while preserving the theoretical properties of NID.
-    
+    This is based on the classifier presented in "'Low-Resource' Text Classification: 
+    A Parameter-Free Classification Method with Compressors" [1], which presents the
+    application of KNN with a gzip compressor using the Normalized Compression Distance
+    for text classification tasks. 
+
+    The NCD Classifier performs reasonably well even against much more complex models 
+    on a variety of ML benchmarks.
+
+    Unlike the implementation used in the paper, this version uses Narwhals to enable
+    compatibility with both Pandas and Polars dataframes, and supports multiple compression
+    algorithms as well as custom user-defined compressors. This makes it easier to compare
+    to other models from sklearn or other ML workflows (like ExplodingHam). The implementation
+    also precomputes a few values in the fit phase to speed up predictions (unlike a more 
+    traditional KNN implementation that just stores raw data).
+
+    One shortcoming of this implementation is that the compression and encoding all happens in python,
+    which may be slower than leveraging a library that does compression in a lower-level language.
+
     **Advantages:**
     - No feature engineering or preprocessing required
-    - Universal: works across different data modalities
     - Parameter-free distance metric (aside from k)
-    - Theoretically grounded in information theory
     
     **Limitations:**
-    - Computationally expensive (compression is slow)
-    - Not suitable for large datasets
-    - Performance depends on choosing appropriate compressor
-    - Slower than traditional KNN with geometric distances
+    - Computationally expensive (compression is slow), so this may work best with a relatively
+      small training set.
+    - Not suitable for large datasets.
+    - A common sense issue is that classification where two samples in the train and test set share
+      longer words may have an unfair advantage due to better compression, whereas a word-token-based
+      model would consider the whole words (eliminating that bias). In situations where there is a
+      high degree of bias, it might make sense to do some degree of preprocessing using like RegExs to
+      replace certain words with abbreviations before compression. Manual processing like that, however,
+      reduces the usefulness of this approach. 
     
     References
     ----------
-    .. [1] Cilibrasi, R., & Vitanyi, P. M. (2005). Clustering by compression.
-           IEEE Transactions on Information theory, 51(4), 1523-1545.
-    .. [2] Li, M., Chen, X., Li, X., Ma, B., & Vitányi, P. M. (2004). The 
-           similarity metric. IEEE transactions on Information Theory, 50(12),
-           3250-3264.
+    .. [1]      Zhiying Jiang, Matthew Yang, Mikhail Tsirlin, Raphael Tang, Yiqin
+                Dai, and Jimmy Lin. 2023. “Low-Resource” Text Classification: A 
+                Parameter-Free Classification Method with Compressors. In 
+                Findings of the Association for Computational Linguistics: ACL 2023,
+                pages 6810-6828, Toronto, Canada. Association for Computational
+                Linguistics. https://aclanthology.org/2023.findings-acl.426
     """
     def __init__(
         self,
@@ -328,8 +341,8 @@ class CompressionKNN(BaseKNNModel):
         
     def fit(
         self,
-        X_train: nw.DataFrame | nw.Series,
-        y_train: nw.DataFrame | nw.Series
+        X_train: DataFrameOrSeries,
+        y_train: DataFrameOrSeries
     ):
         """Fit the CompressionKNN classifier on training data.
         
@@ -343,10 +356,10 @@ class CompressionKNN(BaseKNNModel):
         
         Parameters
         ----------
-        X_train : nw.DataFrame or nw.Series
+        X_train : DataFrame or Series
             Training data containing samples to compress. Can be a DataFrame with
             one or more columns (specify data_column) or a Series.
-        y_train : nw.DataFrame or nw.Series
+        y_train : DataFrame or Series
             Target labels corresponding to X_train samples. Must have the same
             number of rows as X_train.
         
@@ -398,7 +411,7 @@ class CompressionKNN(BaseKNNModel):
 
     def predict(
         self,
-        X: nw.DataFrame | nw.Series
+        X: DataFrameOrSeries
     ):
         """Predict class labels for test samples using compression-based similarity.
         
@@ -530,7 +543,7 @@ class CompressionKNN(BaseKNNModel):
         
         return nw.col(column).map_batches(compress_to_series).cast(nw.Int64)
     
-    def _handle_X(self, X: nw.DataFrame | nw.Series) -> nw.DataFrame:
+    def _handle_X(self, X: DataFrameOrSeries) -> nw.DataFrame:
         """Normalize input data to DataFrame format.
         
         Converts input to a Narwhals DataFrame, handling both Series and
@@ -604,7 +617,7 @@ class CompressionKNN(BaseKNNModel):
         else:
             raise ValueError(f"Unsupported compressor: {compressor_name}")
         
-    def _add_y_to_X(self, y: nw.DataFrame | nw.Series) -> None:
+    def _add_y_to_X(self, y: DataFrameOrSeries) -> None:
         """Add target labels to the internal model data.
         
         Horizontally concatenates target labels with feature data stored in
