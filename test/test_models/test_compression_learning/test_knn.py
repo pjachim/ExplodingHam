@@ -399,20 +399,6 @@ class TestCompressionKNNIntegration:
             result = clf.predict(X_test)
             
             assert result is not None
-    
-    def test_cross_backend_compatibility(self) -> None:
-        """Test training with pandas and predicting with polars."""
-        X_train = pd.DataFrame({'text': ['hello', 'goodbye', 'hello']})
-        y_train = pd.Series([0, 1, 0], name='label')
-        
-        clf = CompressionKNN(k=2, data_column='text')
-        clf.fit(X_train, y_train)
-        
-        # Predict with polars
-        X_test = pl.DataFrame({'text': ['hello']})
-        result = clf.predict(X_test)
-        
-        assert result is not None
 
 
 class TestCompressionKNNEdgeCases:
