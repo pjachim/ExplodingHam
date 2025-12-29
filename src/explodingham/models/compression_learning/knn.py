@@ -1,6 +1,7 @@
 from typing import Callable
 from explodingham.utils.base.base_classifier import BaseExplodingHamClassifier
 import narwhals as nw
+import numpy as np
 
 class BaseKNNModel(BaseExplodingHamClassifier):
     """Base class for K-Nearest Neighbors models.
@@ -179,6 +180,8 @@ class CompressionKNN(BaseKNNModel):
             self._compressed_a_len_name,
             self.target_column
         ])
+        
+        return self
 
     def predict(
         self,
@@ -217,9 +220,20 @@ class CompressionKNN(BaseKNNModel):
 
         # Per https://aclanthology.org/2023.findings-acl.426.pdf
         # NCD(x, y) = [C(xy) − min{C(x), C(y)}] / max{C(x), C(y)}
+        # Compute compressed length of concatenated strings
+        def compress_concat_to_numpy(s):
+            """Compress concatenated values and return lengths as numpy array."""
+            compressed_lengths = [len(self.compressor(x.encode(self.encoding) if isinstance(x, str) else x)) for x in s]
+            return np.array(compressed_lengths, dtype=np.int64)
+        
+        concat_compressed_len = (
+            (nw.col(self._a_data_name) + nw.col(self.data_column))
+            .map_batches(compress_concat_to_numpy)
+        )
+        
         distance_expression = (
             (
-                self._get_compressed_len(self._a_data_name + nw.col(self.data_column))
+                concat_compressed_len
                 - nw.min_horizontal(
                     nw.col(self._compressed_a_len_name),
                     nw.col(compressed_b_len_name)
@@ -246,18 +260,12 @@ class CompressionKNN(BaseKNNModel):
         nw.Expr
             Narwhals expression that computes compressed length for each value.
         """
-        if self.encoded:
-            # Data is already bytes, just compress
-            return nw.col(column).map_batches(
-                lambda s: nw.new_series(name=column, values=[self.compressor(x) for x in s], backend=self.backend).to_native(),
-                return_dtype=nw.Object
-            ).len()
-        else:
-            # Data is strings, encode AND compress in one operation
-            return nw.col(column).map_batches(
-                lambda s: nw.new_series(name=column, values=[self.compressor(x.encode(self.encoding)) for x in s], backend=self.backend).to_native(),
-                return_dtype=nw.Object
-            ).len()
+        def compress_to_series(s):
+            """Compress series values and return lengths as numpy array."""
+            compressed_lengths = [len(self.compressor(x.encode(self.encoding) if isinstance(x, str) else x)) for x in s]
+            return np.array(compressed_lengths, dtype=np.int64)
+        
+        return nw.col(column).map_batches(compress_to_series)
     
     def _encode(self, column: str) -> nw.Expr:
         """Encode string data to bytes using configured encoding.
