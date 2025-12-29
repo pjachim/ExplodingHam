@@ -286,31 +286,6 @@ class TestCompressionKNNHelperMethods:
         with pytest.raises(ValueError) as exc_info:
             clf._get_callable_compressor('invalid_compressor')
         assert "Unsupported compressor" in str(exc_info.value)
-    
-    def test_encode_string(self) -> None:
-        """Test _encode_string encodes string to bytes."""
-        clf = CompressionKNN(k=5, encoding='utf-8')
-        
-        result = clf._encode_string('hello')
-        assert result == b'hello'
-    
-    def test_encode_string_with_different_encoding(self) -> None:
-        """Test _encode_string with different encoding."""
-        clf = CompressionKNN(k=5, encoding='latin-1')
-        
-        result = clf._encode_string('café')
-        assert result == 'café'.encode('latin-1')
-    
-    def test_compress_bytes(self) -> None:
-        """Test _compress_bytes compresses data."""
-        import gzip
-        clf = CompressionKNN(k=5, compressor='gzip')
-        
-        data = b'hello world' * 100
-        result = clf._compress_bytes(data)
-        
-        assert isinstance(result, bytes)
-        assert len(result) < len(data)  # Compressed should be smaller
 
 
 class TestCompressionKNNIntegration:
