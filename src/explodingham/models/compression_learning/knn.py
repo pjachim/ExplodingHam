@@ -238,8 +238,7 @@ class CompressionKNN(BaseKNNModel):
 
     def predict(
         self,
-        X: nw.DataFrame | nw.Series,
-        return_neighbors: bool = False
+        X: nw.DataFrame | nw.Series
     ):
         """Predict class labels for samples using compression distance.
         
@@ -250,17 +249,11 @@ class CompressionKNN(BaseKNNModel):
         ----------
         X : nw.DataFrame or nw.Series
             Test samples to classify.
-        return_neighbors : bool, default=False
-            If True, return grouped DataFrame with all k neighbors for inspection.
-            If False (default), return predicted class labels.
         
         Returns
         -------
         nw.Series or nw.DataFrame
-            If return_neighbors=False: Series with predicted class for each sample.
-            If return_neighbors=True: Grouped DataFrame with k nearest neighbors
-            for each test sample, grouped by test sample row number.
-        
+
         Notes
         -----
         The NCD formula used is:
@@ -293,12 +286,14 @@ class CompressionKNN(BaseKNNModel):
             )
         )
 
-        return self.compute_knn(
+        preds = self.compute_knn(
             X, 
             self.model_data, 
             distance_expression=distance_expression, 
-            return_predictions=not return_neighbors
+            return_predictions=True
         )
+
+        return preds.to_native()
 
     def _get_compressed_len(self, column: str) -> nw.Expr:
         """Get compressed length of data in a column.
