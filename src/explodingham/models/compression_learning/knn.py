@@ -22,15 +22,18 @@ class BaseKNNModel(BaseExplodingHamClassifier):
     """
     def __init__(
         self,
-        k: int
+        k: int,
+        target_column: str = 'target'
     ):
         self.k = k
+        self.target_column = target_column
         
     def compute_knn(
         self,
         a,
         b,
-        distance_expression
+        distance_expression,
+        return_predictions: bool = True
     ):
         """Compute k-nearest neighbors between two DataFrames.
         
@@ -47,19 +50,58 @@ class BaseKNNModel(BaseExplodingHamClassifier):
         distance_expression : nw.Expr
             Narwhals expression that computes distance between rows.
             Should reference columns from both a and b after cross join.
+        return_predictions : bool, default=True
+            If True, return predicted classes (mode of k neighbors).
+            If False, return grouped DataFrame with all k neighbors.
         
         Returns
         -------
-        nw.DataFrame
-            Grouped DataFrame with k nearest neighbors for each row in a,
-            grouped by the original row index.
+        nw.Series or nw.DataFrame
+            If return_predictions=True: Series with predicted class for each row in a.
+            If return_predictions=False: Grouped DataFrame with k nearest neighbors 
+            for each row in a, grouped by the original row index.
         """
         a = nw.from_native(a)
 
         index_column = nw.generate_temporary_column_name(6, columns=a.columns)
         a = a.with_row_index(index_column)
-        b = nw.from_native(b)
+        
+        # Convert b to same backend as a for cross join compatibility
+        b_nw = nw.from_native(b)
+        # Convert b's native backend to match a's native backend
+        if a.to_native().__class__.__name__ != b_nw.to_native().__class__.__name__:
+            # Different backends - need to convert b to a's backend
+            import pandas as pd
+            import polars as pl
+            b_native = b_nw.to_native()
+            a_native = a.to_native()
+            
+            if isinstance(a_native, pd.DataFrame) and not isinstance(b_native, pd.DataFrame):
+                # Convert b to pandas
+                b = nw.from_native(b_native.to_pandas())
+            elif isinstance(a_native, pl.DataFrame) and not isinstance(b_native, pl.DataFrame):
+                # Convert b to polars
+                b = nw.from_native(pl.from_pandas(b_native))
+            else:
+                b = b_nw
+        else:
+            b = b_nw
+        
         a = a.join(b, how='cross')
+        
+        # Add concatenated compression length column after cross join
+        # This must be done here because we need columns from both a and b
+        def compress_concat_to_numpy(s):
+            """Compress concatenated values and return lengths as numpy array."""
+            compressed_lengths = [len(self.compressor(x.encode(self.encoding) if isinstance(x, str) else x)) for x in s]
+            return np.array(compressed_lengths, dtype=np.int64)
+        
+        a = a.with_columns(
+            (nw.col(self._a_data_name) + nw.col(self.data_column))
+            .map_batches(compress_concat_to_numpy)
+            .cast(nw.Int64)
+            .alias('_concat_compressed_len')
+        )
 
         distance_column = nw.generate_temporary_column_name(6, columns=a.columns)
         a = a.with_columns((distance_expression).alias(distance_column))
@@ -71,9 +113,19 @@ class BaseKNNModel(BaseExplodingHamClassifier):
 
         a = a.filter(nw.col(rank_column) <= self.k)
 
-        a = a.group_by(index_column)
-
-        return a
+        if return_predictions:
+            # Aggregate to get predicted class (mode of k neighbors)
+            result = a.group_by(index_column).agg(
+                nw.col(self.target_column).mode().first()
+            )
+            # Sort by index to maintain original order
+            result = result.sort(index_column)
+            # Return just the predictions as a Series
+            return result[self.target_column]
+        else:
+            # Return grouped DataFrame for inspection
+            a = a.group_by(index_column)
+            return a
     
 class CompressionKNN(BaseKNNModel):
     """K-Nearest Neighbors classifier using Normalized Compression Distance.
@@ -124,7 +176,8 @@ class CompressionKNN(BaseKNNModel):
         data_column: str | None = None,
         encoding: str = 'utf-8',
         compressor: str | Callable = 'gzip',
-        encoded=False
+        encoded=False,
+        target_column: str = 'target'
     ):
         self.encoding = encoding
         self.encoded = encoded
@@ -136,7 +189,7 @@ class CompressionKNN(BaseKNNModel):
         elif callable(compressor):
             self.compressor = compressor
         
-        super().__init__(k)
+        super().__init__(k, target_column=target_column)
         
     def fit(
         self,
@@ -185,23 +238,28 @@ class CompressionKNN(BaseKNNModel):
 
     def predict(
         self,
-        X: nw.DataFrame | nw.Series
+        X: nw.DataFrame | nw.Series,
+        return_neighbors: bool = False
     ):
         """Predict class labels for samples using compression distance.
         
         Computes Normalized Compression Distance (NCD) between each test sample
-        and all training samples, then returns the k nearest neighbors.
+        and all training samples, then returns predicted class labels.
         
         Parameters
         ----------
         X : nw.DataFrame or nw.Series
             Test samples to classify.
+        return_neighbors : bool, default=False
+            If True, return grouped DataFrame with all k neighbors for inspection.
+            If False (default), return predicted class labels.
         
         Returns
         -------
-        nw.DataFrame
-            Grouped DataFrame containing k-nearest neighbors for each test sample.
-            Groups are indexed by test sample row number.
+        nw.Series or nw.DataFrame
+            If return_neighbors=False: Series with predicted class for each sample.
+            If return_neighbors=True: Grouped DataFrame with k nearest neighbors
+            for each test sample, grouped by test sample row number.
         
         Notes
         -----
@@ -220,20 +278,10 @@ class CompressionKNN(BaseKNNModel):
 
         # Per https://aclanthology.org/2023.findings-acl.426.pdf
         # NCD(x, y) = [C(xy) − min{C(x), C(y)}] / max{C(x), C(y)}
-        # Compute compressed length of concatenated strings
-        def compress_concat_to_numpy(s):
-            """Compress concatenated values and return lengths as numpy array."""
-            compressed_lengths = [len(self.compressor(x.encode(self.encoding) if isinstance(x, str) else x)) for x in s]
-            return np.array(compressed_lengths, dtype=np.int64)
-        
-        concat_compressed_len = (
-            (nw.col(self._a_data_name) + nw.col(self.data_column))
-            .map_batches(compress_concat_to_numpy)
-        )
-        
+        # Build distance expression using only column references (no map_batches in expression)
         distance_expression = (
             (
-                concat_compressed_len
+                nw.col('_concat_compressed_len')
                 - nw.min_horizontal(
                     nw.col(self._compressed_a_len_name),
                     nw.col(compressed_b_len_name)
@@ -245,7 +293,12 @@ class CompressionKNN(BaseKNNModel):
             )
         )
 
-        return self.compute_knn(X, self.model_data, distance_expression=distance_expression)
+        return self.compute_knn(
+            X, 
+            self.model_data, 
+            distance_expression=distance_expression, 
+            return_predictions=not return_neighbors
+        )
 
     def _get_compressed_len(self, column: str) -> nw.Expr:
         """Get compressed length of data in a column.
@@ -265,7 +318,7 @@ class CompressionKNN(BaseKNNModel):
             compressed_lengths = [len(self.compressor(x.encode(self.encoding) if isinstance(x, str) else x)) for x in s]
             return np.array(compressed_lengths, dtype=np.int64)
         
-        return nw.col(column).map_batches(compress_to_series)
+        return nw.col(column).map_batches(compress_to_series).cast(nw.Int64)
     
     def _encode(self, column: str) -> nw.Expr:
         """Encode string data to bytes using configured encoding.
@@ -386,149 +439,23 @@ class CompressionKNN(BaseKNNModel):
         ValueError
             If y is a DataFrame with more than one column.
         """
-        if type(y) is nw.DataFrame:
+        if isinstance(y, nw.DataFrame):
             if len(y.columns) != 1:
                 raise ValueError("y_train must have exactly one column.")
 
             else:
                 self.target_column = y.columns[0]
         
-        elif type(y) is nw.Series:
-            self.target_column = y.name
-            y = y.to_frame()
+        elif isinstance(y, nw.Series):
+            # Check if Series has a name
+            if y.name is None:
+                # No name - use self.target_column and rename after converting to frame
+                y = y.to_frame()
+                y = y.rename({y.columns[0]: self.target_column})
+            else:
+                # Has a name - use it and update self.target_column
+                y = y.to_frame()
+                self.target_column = y.columns[0]
 
         
         self.model_data = nw.concat([self.model_data, y], how='horizontal')
-
-#class CompressionKNN(BaseExplodingHamClassifier):
-#    def __init__(
-#            self,
-#            n_neighbors: int = 5,
-#            compression: str = 'gzip',
-#            token_scrubbing: bool = False,
-#            encoding: str = 'utf-8'
-#        ) -> None:
-#        """
-#        K-Nearest Neighbors classifier using compression-based distance metrics.
-#        Parameters
-#        ----------
-#        n_neighbors : int, optional
-#            Number of neighbors to use (default is 5).
-#        compression : str, optional
-#            Compression method to use (default is 'gzip').
-#        token_scrubbing : bool, optional
-#            Whether to use token scrubbing (default is False).
-#        encoding : str, optional
-#            Encoding to use when converting strings to bytes (default is 'utf-8').
-#        """
-#        self._set_param('n_neighbors', n_neighbors, int)
-#        self._set_option('compression', compression, ['gzip'])
-#        self._set_param('token_scrubbing', token_scrubbing, bool)
-#        self._set_param('encoding', encoding, str)
-#        self.ncd = NormalizedCompressionDistance(
-#            compressor = self._get_compression_function()
-#        )
-#
-#    def _get_compression_function(self) -> callable:
-#        """
-#        Get the compression function based on the specified method.
-#        Parameters
-#        ----------
-#        method : str
-#            Compression method name.
-#        Returns
-#        -------
-#        compressor : Callable
-#            Compression function.
-#        """
-#        if self.compression == 'gzip':
-#            import gzip
-#            return gzip.compress
-#        
-#        raise NotImplementedError(f"Compression method '{self.compression}' is not implemented.")
-#
-#    def _convert_to_bytes(self, x: str | bytes) -> bytes:
-#        """
-#        Convert input to bytes if it's a string.
-#        Parameters
-#        ----------
-#        x : str | bytes
-#            Input data.
-#        Returns
-#        -------
-#        bytes
-#            Input data as bytes.
-#        """
-#        if isinstance(x, str):
-#            return x.encode(self.encoding)
-#        return x
-#
-#    def fit(self, X, y):
-#        """
-#        Fit the CompressionKNN model.
-#        Parameters
-#        ----------
-#        X : array-like, shape (n_samples, n_features)
-#            Training data (strings or bytes).
-#        y : array-like, shape (n_samples,)
-#            Target labels.
-#        Returns
-#        -------
-#        self : object
-#            Fitted estimator.
-#        """
-#        # Convert all training data to bytes
-#        self.stored_X = [self._convert_to_bytes(x) for x in X]
-#        self.stored_y = y
-#
-#        return self
-#    
-#    def predict(self, X) -> list:
-#        """
-#        Predict the class labels for the provided data.
-#        Parameters
-#        ----------
-#        X : array-like, shape (n_samples, n_features)
-#            Input data.
-#        Returns
-#        -------
-#        y_pred : array, shape (n_samples,)
-#            Predicted class labels.
-#        """
-#        return self._predict_labels_or_predict_proba(X, return_probs=False)
-#    
-#    def predict_proba(self, X) -> list:
-#        """
-#        Predict class probabilities for the provided data.
-#        Parameters
-#        ----------
-#        X : array-like, shape (n_samples, n_features)
-#            Input data.
-#        Returns
-#        -------
-#        y_proba : array, shape (n_samples,)
-#            Predicted class probabilities.
-#        """
-#        return self._predict_labels_or_predict_proba(X, return_probs=True)
-#
-#    def _predict_labels_or_predict_proba(self, X, return_probs: bool) -> list:
-#        labels = []
-#        for x in X:
-#            # Convert test sample to bytes
-#            x_bytes = self._convert_to_bytes(x)
-#            distances = [
-#                self.ncd.ncd(x_bytes, train_x) for train_x in self.stored_X
-#            ]
-#
-#            # Get top n_neighbors from self.stored_y based on distances
-#            neighbor_indices = np.argsort(distances)[:self.n_neighbors]
-#            neighbor_labels = [self.stored_y[i] for i in neighbor_indices]
-#
-#            # Get label from mode of neighbor_labels (supports any hashable type)
-#            label = Counter(neighbor_labels).most_common(1)[0][0]
-#            if return_probs:
-#                label = len([l for l in neighbor_labels if l == label]) / self.n_neighbors
-#
-#            labels.append(label)
-#
-#        return labels
