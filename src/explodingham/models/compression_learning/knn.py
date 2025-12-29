@@ -3,6 +3,22 @@ from explodingham.utils.base.base_classifier import BaseExplodingHamClassifier
 import narwhals as nw
 
 class BaseKNNModel(BaseExplodingHamClassifier):
+    """Base class for K-Nearest Neighbors models.
+    
+    This abstract base class provides core KNN functionality for finding
+    k-nearest neighbors using a custom distance metric. Subclasses should
+    implement specific distance metrics and prediction logic.
+    
+    Parameters
+    ----------
+    k : int
+        Number of nearest neighbors to use for predictions.
+    
+    Attributes
+    ----------
+    k : int
+        Number of nearest neighbors.
+    """
     def __init__(
         self,
         k: int
@@ -15,7 +31,28 @@ class BaseKNNModel(BaseExplodingHamClassifier):
         b,
         distance_expression
     ):
-        """Compute pairwise distance matrix between two DataFrames."""
+        """Compute k-nearest neighbors between two DataFrames.
+        
+        Performs a cross join between DataFrames a and b, computes distances
+        using the provided expression, ranks neighbors by distance, and filters
+        to keep only the k nearest neighbors for each row in a.
+        
+        Parameters
+        ----------
+        a : nw.DataFrame
+            Query DataFrame for which to find nearest neighbors.
+        b : nw.DataFrame
+            Reference DataFrame containing candidate neighbors.
+        distance_expression : nw.Expr
+            Narwhals expression that computes distance between rows.
+            Should reference columns from both a and b after cross join.
+        
+        Returns
+        -------
+        nw.DataFrame
+            Grouped DataFrame with k nearest neighbors for each row in a,
+            grouped by the original row index.
+        """
         a = nw.from_native(a)
 
         index_column = nw.generate_temporary_column_name(6, columns=a.columns)
@@ -38,6 +75,48 @@ class BaseKNNModel(BaseExplodingHamClassifier):
         return a
     
 class CompressionKNN(BaseKNNModel):
+    """K-Nearest Neighbors classifier using Normalized Compression Distance.
+    
+    This classifier uses compression-based similarity metrics to classify samples.
+    It computes the Normalized Compression Distance (NCD) between samples, where
+    NCD(x, y) = [C(xy) - min{C(x), C(y)}] / max{C(x), C(y)}, and C(·) is the
+    compressed length. This approach leverages the principle that similar objects
+    compress well together.
+    
+    Parameters
+    ----------
+    k : int
+        Number of nearest neighbors to use for classification.
+    data_column : str or None, optional
+        Name of the column containing data to compress. If None, will be inferred.
+    encoding : str, default='utf-8'
+        Character encoding to use when converting strings to bytes.
+    compressor : str or Callable, default='gzip'
+        Compression method. If string, must be one of 'gzip', 'bz2', or 'lzma'.
+        If callable, should be a function that takes bytes and returns compressed bytes.
+    encoded : bool, default=False
+        If True, assumes input data is already encoded as bytes.
+    
+    Attributes
+    ----------
+    model_data : nw.DataFrame
+        Training data with precomputed compressed lengths.
+    target_column : str
+        Name of the target variable column.
+    compressor : Callable
+        Compression function used for NCD computation.
+    
+    Notes
+    -----
+    The Normalized Compression Distance is based on Kolmogorov complexity theory
+    and provides a universal similarity metric. The method is parameter-free
+    (aside from k) and can work with any data type that can be serialized.
+    
+    References
+    ----------
+    .. [1] Cilibrasi, R., & Vitanyi, P. M. (2005). Clustering by compression.
+           IEEE Transactions on Information theory, 51(4), 1523-1545.
+    """
     def __init__(
         self,
         k: int,
@@ -63,6 +142,23 @@ class CompressionKNN(BaseKNNModel):
         X_train: nw.DataFrame | nw.Series,
         y_train: nw.DataFrame | nw.Series
     ):
+        """Fit the CompressionKNN classifier.
+        
+        Stores the training data and precomputes compressed lengths for efficiency.
+        This avoids redundant compression operations during prediction.
+        
+        Parameters
+        ----------
+        X_train : nw.DataFrame or nw.Series
+            Training data containing samples to compress.
+        y_train : nw.DataFrame or nw.Series
+            Target labels corresponding to X_train samples.
+        
+        Returns
+        -------
+        self : CompressionKNN
+            Fitted classifier instance.
+        """
         self.model_data = self._handle_X(X_train)
         self.backend = self.model_data.implementation
 
@@ -88,6 +184,29 @@ class CompressionKNN(BaseKNNModel):
         self,
         X: nw.DataFrame | nw.Series
     ):
+        """Predict class labels for samples using compression distance.
+        
+        Computes Normalized Compression Distance (NCD) between each test sample
+        and all training samples, then returns the k nearest neighbors.
+        
+        Parameters
+        ----------
+        X : nw.DataFrame or nw.Series
+            Test samples to classify.
+        
+        Returns
+        -------
+        nw.DataFrame
+            Grouped DataFrame containing k-nearest neighbors for each test sample.
+            Groups are indexed by test sample row number.
+        
+        Notes
+        -----
+        The NCD formula used is:
+        NCD(x, y) = [C(xy) - min{C(x), C(y)}] / max{C(x), C(y)}
+        
+        where C(·) denotes the compressed length of a sequence.
+        """
         X = self._handle_X(X)
 
         # Add compressed length column to X to reduce computations
@@ -115,6 +234,18 @@ class CompressionKNN(BaseKNNModel):
         return self.compute_knn(X, self.model_data, distance_expression=distance_expression)
 
     def _get_compressed_len(self, column: str) -> nw.Expr:
+        """Get compressed length of data in a column.
+        
+        Parameters
+        ----------
+        column : str
+            Name of the column to compress.
+        
+        Returns
+        -------
+        nw.Expr
+            Narwhals expression that computes compressed length for each value.
+        """
         if self.encoded:
             col_expr = nw.col(column)
         else:
@@ -126,18 +257,66 @@ class CompressionKNN(BaseKNNModel):
             ).len().alias(column)
     
     def _encode(self, column: str) -> nw.Expr:
+        """Encode string data to bytes using configured encoding.
+        
+        Parameters
+        ----------
+        column : str
+            Name of the column containing string data.
+        
+        Returns
+        -------
+        nw.Expr
+            Narwhals expression that encodes strings to bytes.
+        """
         return nw.col(column).map_batches(
                 lambda s: nw.new_series(name=column, values=[lambda x: x.encode(self.encoding) for x in s], backend=self.backend).to_native(),
                 return_dtype=nw.Binary
             ).len().alias(column)
     
     def _encode_string(self, string: str) -> nw.Expr:
+        """Encode a single string to bytes.
+        
+        Parameters
+        ----------
+        string : str
+            String to encode.
+        
+        Returns
+        -------
+        bytes
+            Encoded byte representation of the string.
+        """
         return string.encode(self.encoding)
     
     def _compress_bytes(self, byte_data: bytes) -> bytes:
+        """Compress byte data using configured compressor.
+        
+        Parameters
+        ----------
+        byte_data : bytes
+            Data to compress.
+        
+        Returns
+        -------
+        bytes
+            Compressed byte data.
+        """
         return self.compressor(byte_data)
     
     def _handle_X(self, X: nw.DataFrame | nw.Series) -> nw.DataFrame:
+        """Convert input data to DataFrame format.
+        
+        Parameters
+        ----------
+        X : nw.DataFrame or nw.Series
+            Input data to convert.
+        
+        Returns
+        -------
+        nw.DataFrame
+            Input data as a DataFrame.
+        """
         X = nw.from_native(X, allow_series=True, eager_only=True)
         
         if isinstance(X, nw.Series):
@@ -147,6 +326,24 @@ class CompressionKNN(BaseKNNModel):
         
 
     def _get_callable_compressor(self, compressor_name: str) -> callable:
+        """Get compression function from string identifier.
+        
+        Parameters
+        ----------
+        compressor_name : str
+            Name of the compression algorithm. Must be one of:
+            'gzip', 'bz2', or 'lzma'.
+        
+        Returns
+        -------
+        callable
+            Compression function that takes bytes and returns compressed bytes.
+        
+        Raises
+        ------
+        ValueError
+            If compressor_name is not supported.
+        """
         if compressor_name == 'gzip':
             import gzip
             return gzip.compress
@@ -163,6 +360,21 @@ class CompressionKNN(BaseKNNModel):
             raise ValueError(f"Unsupported compressor: {compressor_name}")
         
     def _add_y_to_X(self, y: nw.DataFrame | nw.Series) -> None:
+        """Add target variable to model data.
+        
+        Horizontally concatenates target labels with feature data and
+        stores the target column name.
+        
+        Parameters
+        ----------
+        y : nw.DataFrame or nw.Series
+            Target labels to add. If DataFrame, must have exactly one column.
+        
+        Raises
+        ------
+        ValueError
+            If y is a DataFrame with more than one column.
+        """
         if type(y) is nw.DataFrame:
             if len(y.columns) != 1:
                 raise ValueError("y_train must have exactly one column.")
