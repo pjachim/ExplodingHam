@@ -247,14 +247,17 @@ class CompressionKNN(BaseKNNModel):
             Narwhals expression that computes compressed length for each value.
         """
         if self.encoded:
-            col_expr = nw.col(column)
-        else:
-            col_expr = self._encode(column)
-
-        return col_expr.map_batches(
+            # Data is already bytes, just compress
+            return nw.col(column).map_batches(
                 lambda s: nw.new_series(name=column, values=[self.compressor(x) for x in s], backend=self.backend).to_native(),
-                return_dtype=nw.Binary
-            ).len().alias(column)
+                return_dtype=nw.Object
+            ).len()
+        else:
+            # Data is strings, encode AND compress in one operation
+            return nw.col(column).map_batches(
+                lambda s: nw.new_series(name=column, values=[self.compressor(x.encode(self.encoding)) for x in s], backend=self.backend).to_native(),
+                return_dtype=nw.Object
+            ).len()
     
     def _encode(self, column: str) -> nw.Expr:
         """Encode string data to bytes using configured encoding.
@@ -272,7 +275,7 @@ class CompressionKNN(BaseKNNModel):
         return nw.col(column).map_batches(
                 lambda s: nw.new_series(name=column, values=[x.encode(self.encoding) for x in s], backend=self.backend).to_native(),
                 return_dtype=nw.Binary
-            ).len().alias(column)
+            )
     
     def _encode_string(self, string: str) -> nw.Expr:
         """Encode a single string to bytes.
