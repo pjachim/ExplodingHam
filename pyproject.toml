@@ -1,6 +1,6 @@
 [project]
 name = "explodingham"
-version = "0.0.1"
+version = "0.0.2"
 authors = [
   { name="Peter Jachim", email="pjachim@outlook.com" },
 ]
@@ -16,7 +16,8 @@ license-files = ["LICEN[CS]E*"]
 
 [build-system]
 requires = [
-  "setuptools >= 77.0.3"
+  "setuptools >= 77.0.3",
+  "narwhals >= 2.14.0"
 ]
 build-backend = "setuptools.build_meta"
 
