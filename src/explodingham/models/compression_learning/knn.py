@@ -251,7 +251,7 @@ class CompressionKNN(BaseKNNModel):
         else:
             col_expr = self._encode(column)
 
-        return nw.col(column).map_batches(
+        return col_expr.map_batches(
                 lambda s: nw.new_series(name=column, values=[self.compressor(x) for x in s], backend=self.backend).to_native(),
                 return_dtype=nw.Binary
             ).len().alias(column)
@@ -270,7 +270,7 @@ class CompressionKNN(BaseKNNModel):
             Narwhals expression that encodes strings to bytes.
         """
         return nw.col(column).map_batches(
-                lambda s: nw.new_series(name=column, values=[lambda x: x.encode(self.encoding) for x in s], backend=self.backend).to_native(),
+                lambda s: nw.new_series(name=column, values=[x.encode(self.encoding) for x in s], backend=self.backend).to_native(),
                 return_dtype=nw.Binary
             ).len().alias(column)
     
