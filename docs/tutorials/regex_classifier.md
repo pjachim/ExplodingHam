@@ -2,12 +2,14 @@
 
 ## Introduction
 
-The `BinaryRegexClassifier` is a non-ML baseline classifier that uses regular expressions to classify data. While it doesn't "learn" from data, it's incredibly useful for:
+The `BinaryRegexClassifier` is a non-ML baseline classifier that uses regular expressions to classify data. While it doesn't "learn" from data, it's useful for:
 
 - **Quick baselines**: Test your ML model against simple rules
 - **Known patterns**: When you have clear rules (emails, URLs, etc.)
 - **Pipeline integration**: Drop-in sklearn-compatible classifier
 - **Experimentation**: Rapidly test different regex patterns
+
+This can give you a quick win while you are building a more complex model, and this can help identify useful features that can feed into your model as well. If your model does not beat this, there may be some issues with the model, or the problem may not be an ML problem.
 
 ## Table of Contents
 
@@ -423,35 +425,6 @@ class RegexOrML:
         return regex_results
 ```
 
-### Cross-Validation
-
-```python
-from sklearn.model_selection import cross_val_score
-from sklearn.base import BaseEstimator, ClassifierMixin
-
-# Wrap for sklearn compatibility
-class SklearnRegexClassifier(BaseEstimator, ClassifierMixin):
-    def __init__(self, pattern, match_type='partial', ignore_case=False):
-        self.pattern = pattern
-        self.match_type = match_type
-        self.ignore_case = ignore_case
-        self.clf = BinaryRegexClassifier(
-            pattern=pattern,
-            match_type=match_type,
-            ignore_case=ignore_case
-        )
-    
-    def fit(self, X, y):
-        return self
-    
-    def predict(self, X):
-        return self.clf.predict(X)['prediction'].to_numpy()
-
-# Now you can use it with sklearn tools
-clf = SklearnRegexClassifier(pattern=r'spam', ignore_case=True)
-# scores = cross_val_score(clf, X, y, cv=5)
-```
-
 ### As a Feature Generator
 
 ```python
@@ -507,43 +480,6 @@ print(texts_with_features)
 - Forget to handle edge cases
 - Ignore performance on large datasets
 
-## Debugging Patterns
-
-### Test in Python REPL
-
-```python
-import re
-
-pattern = r'\d{3}-\d{4}'
-test_strings = ['123-4567', 'abc-defg', '99-00']
-
-for s in test_strings:
-    if re.search(pattern, s):
-        print(f"✓ '{s}' matches")
-    else:
-        print(f"✗ '{s}' doesn't match")
-```
-
-### Use Verbose Mode
-
-```python
-import re
-
-# Complex pattern with comments
-pattern = r'''
-    ^                 # Start of string
-    \d{3}             # Three digits
-    [-]               # Literal hyphen
-    \d{4}             # Four digits
-    $                 # End of string
-'''
-
-clf = BinaryRegexClassifier(
-    pattern=pattern,
-    match_type='full',
-    flags=[re.VERBOSE]
-)
-```
 
 ## Common Patterns Reference
 
@@ -586,7 +522,7 @@ pattern=r'@\w+'
 
 - **[API Reference](../api/models/baseline_models.md)** - Complete parameter docs
 - **[Getting Started Guide](../getting_started.md)** - More examples
-- **[Compression KNN Tutorial](compression_knn.md)** - Learn about actual ML in ExplodingHam
+- **[Compression KNN Tutorial](compression_knn.md)** - More complex ML model
 
 ---
 

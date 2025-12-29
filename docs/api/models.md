@@ -35,20 +35,6 @@ predictions = clf.predict(X_test)
 
 **[Full Documentation →](compression_learning.md#compressionknn)**
 
-### BaseKNNModel
-
-Abstract base class for KNN with custom distance metrics.
-
-```python
-from explodingham.models.compression_learning.knn import BaseKNNModel
-
-class MyKNN(BaseKNNModel):
-    # Implement custom distance metric
-    ...
-```
-
-**[Full Documentation →](compression_learning.md#baseknnmodel)**
-
 ## Baseline Models
 
 Non-ML classifiers for establishing baselines and implementing known rules.

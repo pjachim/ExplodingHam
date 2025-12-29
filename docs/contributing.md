@@ -493,25 +493,6 @@ MyAlgorithm(param1: int, param2: str = 'default')
 | `param1` | int | required | Description |
 | `param2` | str | 'default' | Description |
 
-### Methods
-
-#### fit
-
-...
-
-#### predict
-
-...
-
-### Examples
-
-...
-
-### See Also
-
-...
-```
-
 ## Submitting Changes
 
 ### Before Submitting

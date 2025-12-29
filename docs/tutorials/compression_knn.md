@@ -2,7 +2,7 @@
 
 ## Introduction
 
-The `CompressionKNN` classifier is one of the most powerful tools in ExplodingHam. It leverages information theory and Kolmogorov complexity to classify data without any feature engineering. This tutorial will show you how to use it effectively.
+The `CompressionKNN` leverages compression algorithms to classify data without any feature engineering. This tutorial will show you how to use it effectively.
 
 ## Table of Contents
 
@@ -40,9 +40,6 @@ where:
 - NCD is approximately symmetric and satisfies triangle inequality
 - It's a universal similarity metric (works for any data type)
 
-### Connection to Kolmogorov Complexity
-
-NCD approximates the normalized information distance (NID), which is based on Kolmogorov complexity—the length of the shortest program that generates a string. While Kolmogorov complexity is uncomputable, practical compressors approximate it well enough for classification.
 
 ## <a name="basic-usage"></a>Basic Usage
 
@@ -110,38 +107,8 @@ knn = CompressionKNN(k=2, data_column='text', compressor='gzip')
 ```
 
 **Characteristics:**
-- ⚡ Fastest
-- 📊 Good compression ratio
-- 🎯 Works well for most text data
-- Based on DEFLATE algorithm (LZ77 + Huffman coding)
-
-### BZ2
-
-**Best for:** When you want better compression than gzip but still reasonable speed
-
-```python
-knn = CompressionKNN(k=2, data_column='text', compressor='bz2')
-```
-
-**Characteristics:**
-- 🐢 Slower than gzip
-- 📊 Better compression ratio
-- 🎯 Good for repetitive text
-- Based on Burrows-Wheeler transform
-
-### LZMA
-
-**Best for:** Maximum pattern detection, when accuracy > speed
-
-```python
-knn = CompressionKNN(k=2, data_column='text', compressor='lzma')
-```
-
-**Characteristics:**
-- 🐌 Slowest
-- 📊 Best compression ratio
-- 🎯 Excellent for structured data (DNA, source code)
-- Based on Lempel-Ziv-Markov chain algorithm
+- ⚡ Fast
+- 📊 Used in the original paper
 
 ### Comparison Example
 
@@ -449,5 +416,3 @@ for i, t1 in enumerate(texts):
 - **[API Reference](../api/models/compression_learning.md)** - Complete parameter documentation
 
 ---
-
-Now you're ready to use CompressionKNN like a pro! Experiment with different compressors and k values to find what works best for your data.

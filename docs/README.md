@@ -88,13 +88,10 @@ See [Contributing Guide](contributing.md) for details.
 ## Documentation TODOs
 
 Future improvements:
-- [ ] Set up MkDocs or Sphinx for professional site
 - [ ] Add Jupyter notebook examples in docs
-- [ ] Create video tutorials
 - [ ] Add performance benchmarks
 - [ ] Comparison tables with sklearn models
 - [ ] FAQ section
-- [ ] Troubleshooting guide
 
 ## Feedback
 

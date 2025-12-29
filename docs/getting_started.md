@@ -279,15 +279,15 @@ If you run into memory issues:
 
 - Process data in batches
 - Use Polars instead of Pandas (more memory efficient)
-- Reduce the size of your training set
+- Reduce the size of your training set (if the training dataset has 1,000 records, and the test set has 5,000, then during computation the total size of the dataset will balloon to 5,000,000).
 
 ### Accuracy
 
 If accuracy is low:
 
-- Try different compressors (`'lzma'` often works better for pattern-heavy data)
 - Experiment with different k values
 - Ensure your data column doesn't have extra whitespace or formatting issues
+- Experiment with other models (e.g. an sklearn pipeline with TfidfVectorizer and RandomForest)
 
 ---
 

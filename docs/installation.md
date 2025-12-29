@@ -45,7 +45,7 @@ Check that ExplodingHam is installed correctly:
 
 ```python
 import explodingham
-print(explodingham.__version__)  # Should print: 0.0.1
+print(explodingham.__version__)  # Should print: 0.0.2
 
 # Try importing a model
 from explodingham.models.compression_learning.knn import CompressionKNN
@@ -53,8 +53,7 @@ print("✓ Installation successful!")
 ```
 
 ## Optional Dependencies
-
-Depending on your use case, you may want to install:
+ExplodingHam uses narwhals for DataFrame operations, this makes it compatible with pandas or polars, but those are not automatically installed with ExplodingHam. As a result, you will want to install one of those two based on what worksfor your project.
 
 ### For Pandas Support
 ```bash
@@ -67,6 +66,7 @@ pip install polars
 ```
 
 ### For Development
+If you are developing new features for explodingham, you will also want to install pytest:
 ```bash
 pip install pytest  # For running tests
 ```
@@ -77,29 +77,10 @@ pip install pytest  # For running tests
 
 If you see `ModuleNotFoundError: No module named 'explodingham'`:
 
-1. Make sure you installed `explodingham` (with an "i"), not `explodingham`
+1. Make sure you installed `explodingham`
 2. Verify your virtual environment is activated
 3. Try reinstalling: `pip uninstall explodingham && pip install explodingham`
 
-### Version Conflicts
-
-If you encounter dependency conflicts:
-
-```bash
-# Create a fresh virtual environment
-python -m venv fresh_env
-source fresh_env/bin/activate  # or fresh_env\Scripts\activate on Windows
-pip install explodingham
-```
-
-### Permission Errors on Windows
-
-If you get permission errors during installation:
-
-```bash
-# Install for current user only
-pip install --user explodingham
-```
 
 ## Next Steps
 

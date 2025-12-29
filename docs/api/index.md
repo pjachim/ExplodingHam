@@ -29,8 +29,6 @@ Complete API documentation for ExplodingHam's classes and functions.
 ### By Category
 - **Classifiers**: All models inherit from [BaseExplodingHamClassifier](utils/base.md#baseexplodinghamclassifier)
 - **Distance Metrics**: [NormalizedCompressionDistance](utils/distance_metrics.md#normalizedcompressiondistance)
-- **Base Classes**: [BaseKNNModel](models/compression_learning.md#baseknnmodel), [BaseExplodingHamClassifier](utils/base.md#baseexplodinghamclassifier)
-
 ## Index
 
 - [models.compression_learning](models/compression_learning.md)

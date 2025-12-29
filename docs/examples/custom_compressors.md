@@ -1,6 +1,6 @@
 # Custom Compressors
 
-While ExplodingHam provides three built-in compressors (gzip, bz2, lzma), you can create custom compression functions tailored to your specific data and use case.
+While ExplodingHam provides options for compressors offered in base python (gzip, bz2, lzma), you can create custom compression functions tailored to your specific data and use case.
 
 ## Requirements for Custom Compressors
 
@@ -8,8 +8,6 @@ Your compression function must:
 
 1. **Accept `bytes` as input**
 2. **Return `bytes` as output**
-3. **Be deterministic** (same input always produces same output)
-4. **Be lossless** (no information lost in compression)
 
 ```python
 from typing import Callable

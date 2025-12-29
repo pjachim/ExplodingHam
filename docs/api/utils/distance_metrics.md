@@ -249,19 +249,8 @@ linkage_matrix = linkage(condensed, method='average')
 **Normalization:**  
 NCD is normalized to account for different object sizes, making it suitable for comparing objects of varying lengths.
 
-**Approximation:**  
-NCD approximates the normalized information distance (NID), which is based on uncomputable Kolmogorov complexity. Real compressors provide practical approximations.
-
 **Symmetry:**  
 While theoretically symmetric, practical compression can lead to small asymmetries: NCD(x,y) ≈ NCD(y,x)
-
-### References
-
-The NCD metric is based on:
-
-- Li, M., Chen, X., Li, X., Ma, B., & Vitányi, P. M. (2004). "The similarity metric." IEEE Transactions on Information Theory, 50(12), 3250-3264.
-
-- Cilibrasi, R., & Vitányi, P. M. (2005). "Clustering by compression." IEEE Transactions on Information Theory, 51(4), 1523-1545.
 
 ### See Also
 

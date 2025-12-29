@@ -94,9 +94,8 @@ The following algorithms are planned for future releases:
 ExplodingHam focuses on algorithms that:
 
 1. **Didn't make it into sklearn** - Either too experimental, niche, or unconventional
-2. **Have theoretical interest** - Based on solid theory (like information theory, compression theory)
-3. **Solve real problems** - Not just academic curiosities
-4. **Follow sklearn patterns** - Seamless integration with existing workflows
+2. **Solve real problems** - Not just academic curiosities
+3. **Follow sklearn patterns** - Seamless integration with existing workflows
 
 ## Community
 
