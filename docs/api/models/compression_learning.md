@@ -183,12 +183,6 @@ where:
 
 ### Performance Characteristics
 
-| Compressor | Speed | Compression Ratio | Best For |
-|------------|-------|-------------------|----------|
-| gzip | ⚡⚡⚡ Fast | Good | General text, default choice |
-| bz2 | ⚡⚡ Moderate | Better | Repetitive patterns |
-| lzma | ⚡ Slow | Best | Complex patterns, DNA, code |
-
 **Time Complexity:**
 - Training: O(n) where n = number of training samples
 - Prediction: O(n * m * c) where m = number of test samples, c = compression time
@@ -198,9 +192,7 @@ where:
 ### Advantages
 
 ✅ **No feature engineering required** - works directly on raw text/sequences  
-✅ **Universal similarity metric** - works across different data types  
 ✅ **Parameter-free distance** - only need to choose k  
-✅ **Theory-grounded** - based on Kolmogorov complexity  
 ✅ **DataFrame agnostic** - works with Pandas and Polars  
 
 ### Limitations
@@ -213,16 +205,14 @@ where:
 ### When to Use
 
 **Use CompressionKNN when:**
-- You have text, DNA sequences, or sequential data
-- You want to avoid feature engineering
-- Dataset is small-to-medium (<10,000 samples)
-- You need a universal similarity metric
-- Patterns are important (not just word presence)
+- You have a single text/bytes feature that you want to perform your analysis on.
+- Dataset is small-to-medium (<10,000 samples), can also handle extremely small training sets (e.g. 5 samples per class).
+- You don't need much interpretability.
 
 **Don't use when:**
 - Dataset is very large (>100,000 samples)
 - Real-time predictions are needed
-- You have numerical feature vectors (use standard KNN)
+- You have numerical feature vectors (use standard KNN), or multiple features.
 - Word-token features would work better
 
 ### References
@@ -239,102 +229,3 @@ Zhiying Jiang, Matthew Yang, Mikhail Tsirlin, Raphael Tang, Yiqin Dai, and Jimmy
 - [Examples: Text Classification](../../examples/text_classification.md) - Real-world applications
 
 ---
-
-## BaseKNNModel
-
-```python
-from explodingham.models.compression_learning.knn import BaseKNNModel
-```
-
-Base class for K-Nearest Neighbors models using custom distance metrics.
-
-### Class Signature
-
-```python
-BaseKNNModel(
-    k: int,
-    target_column: str = 'target'
-)
-```
-
-### Parameters
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `k` | int | **required** | Number of nearest neighbors to use |
-| `target_column` | str | 'target' | Name of target label column |
-
-### Description
-
-Abstract base class providing core KNN functionality for finding k-nearest neighbors using custom distance metrics. Unlike traditional KNN which relies on geometric distances (Euclidean, Manhattan), this base class supports arbitrary distance functions.
-
-### Key Features
-
-- **Custom distance metrics** - Support for any distance function
-- **DataFrame-agnostic** - Uses Narwhals for Pandas/Polars compatibility
-- **Efficient cross-join** - Optimized for pairwise distance computation
-- **Flexible aggregation** - Returns predictions or k-nearest neighbors
-
-### Methods
-
-#### compute_knn
-
-```python
-compute_knn(
-    a: nw.DataFrame,
-    b: nw.DataFrame,
-    distance_expression: nw.Expr,
-    return_predictions: bool = True
-) -> nw.Series | nw.DataFrame
-```
-
-Compute k-nearest neighbors between two DataFrames using custom distance expression.
-
-**Parameters:**
-- `a` (nw.DataFrame): Query DataFrame
-- `b` (nw.DataFrame): Reference DataFrame (typically training data)
-- `distance_expression` (nw.Expr): Narwhals expression computing distance
-- `return_predictions` (bool, default=True): If True, return predicted classes; if False, return grouped DataFrame with neighbors
-
-**Returns:**
-- Series (if return_predictions=True): Predicted class for each row
-- DataFrame (if return_predictions=False): k nearest neighbors for inspection
-
-### Notes
-
-This class is designed to be subclassed. Subclasses should:
-1. Implement specific distance metrics
-2. Call `compute_knn()` with appropriate distance expression
-3. Handle data preprocessing as needed
-
-### Example Subclass
-
-```python
-class MyCustomKNN(BaseKNNModel):
-    def __init__(self, k, my_param):
-        super().__init__(k)
-        self.my_param = my_param
-    
-    def fit(self, X, y):
-        # Store training data
-        self.X_train = X
-        self.y_train = y
-        return self
-    
-    def predict(self, X_test):
-        # Define custom distance expression
-        distance_expr = ...  # Your distance metric
-        
-        # Use base class compute_knn
-        return self.compute_knn(
-            X_test,
-            self.X_train,
-            distance_expr,
-            return_predictions=True
-        )
-```
-
-### See Also
-
-- [CompressionKNN](#compressionknn) - Concrete implementation using NCD
-- [BaseExplodingHamClassifier](../utils/base.md#baseexplodinghamclassifier) - Base for all classifiers

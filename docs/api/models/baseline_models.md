@@ -271,18 +271,18 @@ flags=[
 ### Use Cases
 
 **Good for:**
-- ✅ Quick baselines before ML
-- ✅ Known patterns (emails, URLs, IDs)
-- ✅ Data validation
-- ✅ Log file filtering
-- ✅ Content filtering with clear rules
-- ✅ Pipeline integration (sklearn-compatible)
+- Quick baselines before ML
+- Known patterns (emails, URLs, IDs)
+- Data validation
+- Log file filtering
+- Content filtering with clear rules
+- Pipeline integration (sklearn-compatible)
 
 **Not ideal for:**
-- ❌ Complex classification tasks
-- ❌ Learning from data
-- ❌ Nuanced pattern detection
-- ❌ Ambiguous cases
+- Complex classification tasks
+- Learning from data
+- Nuanced pattern detection
+- Ambiguous cases
 
 ### Integration with sklearn
 
@@ -310,7 +310,7 @@ def add_regex_features(df):
 
 ### Best Practices
 
-#### ✅ Do:
+#### Do:
 - Test patterns on sample data first
 - Use raw strings (`r'pattern'`)
 - Escape special characters properly
@@ -318,7 +318,6 @@ def add_regex_features(df):
 - Use online regex testers (regex101.com)
 
 #### ❌ Don't:
-- Expect regex to replace ML
 - Make overly complex patterns
 - Forget to handle edge cases
 - Ignore performance on large datasets (though regex is generally fast)
